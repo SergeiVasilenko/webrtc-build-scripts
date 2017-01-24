@@ -1,5 +1,5 @@
 # !/bin/bash
-# Copyright Pristine Inc 
+# Copyright Pristine Inc
 # Author: Rahul Behera <rahul@pristine.io>
 # Author: Aaron Alaniz <aaron@pristine.io>
 # Author: Arik Yaacob   <arik@pristine.io>
@@ -26,12 +26,12 @@ create_directory_if_not_found() {
 	fi
 }
 
-DEFAULT_WEBRTC_URL="https://chromium.googlesource.com/external/webrtc"
+DEFAULT_WEBRTC_URL="https://chromium.googlesource.com/external/webrtc.git"
 DEPOT_TOOLS="$PROJECT_ROOT/depot_tools"
 WEBRTC_ROOT="$PROJECT_ROOT/webrtc"
 create_directory_if_not_found "$WEBRTC_ROOT"
 BUILD="$WEBRTC_ROOT/libjingle_peerconnection_builds"
-WEBRTC_TARGET="AppRTCDemo"
+WEBRTC_TARGET="AppRTCMobile"
 
 ANDROID_TOOLCHAINS="$WEBRTC_ROOT/src/third_party/android_tools/ndk/toolchains"
 
@@ -46,10 +46,12 @@ install_dependencies() {
     sudo apt-get -y install wget git gnupg flex bison gperf build-essential zip curl subversion pkg-config libglib2.0-dev libgtk2.0-dev libxtst-dev libxss-dev libpci-dev libdbus-1-dev libgconf2-dev libgnome-keyring-dev libnss3-dev
     #Download the latest script to install the android dependencies for ubuntu
     #curl -o install-build-deps-android.sh "https://chromium.googlesource.com/chromium/src/+/master/build/install-build-deps-android.sh"
+    curl https://chromium.googlesource.com/chromium/src/+/master/build/install-build-deps-android.sh?format=TEXT | base64 -d > install-build-deps-android.sh
+    
     #use bash (not dash which is default) to run the script
     sudo /bin/bash ./install-build-deps-android.sh
     #delete the file we just downloaded... not needed anymore
-    rm install-build-deps-android.sh
+    #rm install-build-deps-android.sh
 }
 
 # Update/Get/Ensure the Gclient Depot Tools
@@ -99,7 +101,7 @@ pull_webrtc() {
     fi
 
     # Ensure our target os is correct building android
-	echo "target_os = ['unix', 'android']" >> .gclient
+	echo 'target_os = ["android", "unix"]' >> .gclient
 
     # Get latest webrtc source
 	echo Pull down the latest from the webrtc repo
@@ -119,7 +121,11 @@ pull_webrtc() {
 
 # Prepare our build
 function wrbase() {
-    export GYP_DEFINES="OS=android host_os=linux libjingle_java=1 build_with_libjingle=1 build_with_chromium=0 enable_tracing=1 enable_android_opensl=0"
+    export GYP_DEFINES="host_os=linux libjingle_java=1 build_with_libjingle=1 build_with_chromium=0 enable_tracing=1 enable_android_opensl=0 use_sysroot=0 include_tests=0"
+    if [ "$WEBRTC_DEBUG" != "true" ] ;
+    then
+    	export GYP_DEFINES="$GYP_DEFINES fastbuild=2"
+    fi
     export GYP_GENERATORS="ninja"
 }
 
@@ -195,61 +201,78 @@ execute_build() {
     WORKING_DIR=`pwd`
     cd "$WEBRTC_ROOT/src"
 
-    echo Run gclient hooks
-    gclient runhooks
-
     if [ "$WEBRTC_ARCH" = "x86" ] ;
     then
         ARCH="x86"
         STRIP="$ANDROID_TOOLCHAINS/x86-4.9/prebuilt/linux-x86_64/bin/i686-linux-android-strip"
     elif [ "$WEBRTC_ARCH" = "x86_64" ] ;
     then
-        ARCH="x86_64"
+        ARCH="x64"
         STRIP="$ANDROID_TOOLCHAINS/x86_64-4.9/prebuilt/linux-x86_64/bin/x86_64-linux-android-strip"
     elif [ "$WEBRTC_ARCH" = "armv7" ] ;
     then
-        ARCH="armeabi-v7a"
+        ARCH="arm"
         STRIP="$ANDROID_TOOLCHAINS/arm-linux-androideabi-4.9/prebuilt/linux-x86_64/bin/arm-linux-androideabi-strip"
     elif [ "$WEBRTC_ARCH" = "armv8" ] ;
     then
-        ARCH="arm64-v8a"
+        ARCH="arm64"
         STRIP="$ANDROID_TOOLCHAINS/aarch64-linux-android-4.9/prebuilt/linux-x86_64/bin/aarch64-linux-android-strip"
     fi
 
     if [ "$WEBRTC_DEBUG" = "true" ] ;
     then
         BUILD_TYPE="Debug"
+        DEBUG_ARG='is_debug=true'
     else
         BUILD_TYPE="Release"
+        DEBUG_ARG='is_debug=false dcheck_always_on=true'
     fi
 
     ARCH_OUT="out_android_${ARCH}"
+
+    echo Generate projects using GN
+    gn gen "$ARCH_OUT/$BUILD_TYPE" --args="$DEBUG_ARG symbol_level=1 target_os=\"android\" target_cpu=\"${ARCH}\""
+    #gclient runhooks
+
     REVISION_NUM=`get_webrtc_revision`
-    echo "Build ${WEBRTC_TARGET} in $BUILD_TYPE (arch: ${WEBRTC_ARCH:-arm})"
+    echo "Build ${WEBRTC_TARGET} in $BUILD_TYPE (arch: ${WEBRTC_ARCH})"
     exec_ninja "$ARCH_OUT/$BUILD_TYPE"
-    
+
     # Verify the build actually worked
     if [ $? -eq 0 ]; then
         SOURCE_DIR="$WEBRTC_ROOT/src/$ARCH_OUT/$BUILD_TYPE"
         TARGET_DIR="$BUILD/$BUILD_TYPE"
         create_directory_if_not_found "$TARGET_DIR"
-        
+
         echo "Copy JAR File"
         create_directory_if_not_found "$TARGET_DIR/libs/"
         create_directory_if_not_found "$TARGET_DIR/jni/"
 
-        ARCH_JNI="$TARGET_DIR/jni/${ARCH}"
+        if [ "$WEBRTC_ARCH" = "x86" ] ;
+        then
+        	ARCH_JNI="$TARGET_DIR/jni/x86"
+        elif [ "$WEBRTC_ARCH" = "x86_64" ] ;
+        then
+        	ARCH_JNI="$TARGET_DIR/jni/x86_64"
+        elif [ "$WEBRTC_ARCH" = "armv7" ] ;
+        then
+        	ARCH_JNI="$TARGET_DIR/jni/armeabi-v7a"
+        elif [ "$WEBRTC_ARCH" = "armv8" ] ;
+        then
+        	ARCH_JNI="$TARGET_DIR/jni/arm64-v8a"
+        fi
         create_directory_if_not_found "$ARCH_JNI"
 
-        # Copy the jar
-        cp -p "$SOURCE_DIR/gen/libjingle_peerconnection_java/libjingle_peerconnection_java.jar" "$TARGET_DIR/libs/libjingle_peerconnection.jar" 
+        # Copy the jars
+        cp -p "$SOURCE_DIR/lib.java/webrtc/sdk/android/libjingle_peerconnection_java.jar" "$TARGET_DIR/libs/libjingle_peerconnection.jar"
+        cp -p "$SOURCE_DIR/lib.java/webrtc/base/base_java.jar" "$TARGET_DIR/libs/base_java.jar"
 
         # Strip the build only if its release
         if [ "$WEBRTC_DEBUG" = "true" ] ;
         then
-            cp -p "$WEBRTC_ROOT/src/$ARCH_OUT/$BUILD_TYPE/lib/libjingle_peerconnection_so.so" "$ARCH_JNI/libjingle_peerconnection_so.so"
+            cp -p "$WEBRTC_ROOT/src/$ARCH_OUT/$BUILD_TYPE/libjingle_peerconnection_so.so" "$ARCH_JNI/libjingle_peerconnection_so.so"
         else
-            "$STRIP" -o "$ARCH_JNI/libjingle_peerconnection_so.so" "$WEBRTC_ROOT/src/$ARCH_OUT/$BUILD_TYPE/lib/libjingle_peerconnection_so.so" -s    
+            "$STRIP" -o "$ARCH_JNI/libjingle_peerconnection_so.so" "$WEBRTC_ROOT/src/$ARCH_OUT/$BUILD_TYPE/libjingle_peerconnection_so.so" -s
         fi
 
         cd "$TARGET_DIR"
@@ -260,9 +283,9 @@ execute_build() {
         cd "$WORKING_DIR"
         echo "$BUILD_TYPE build for apprtc complete for revision $REVISION_NUM"
     else
-        
+
         echo "$BUILD_TYPE build for apprtc failed for revision $REVISION_NUM"
-        exit 1
+        #exit 1
     fi
 }
 
