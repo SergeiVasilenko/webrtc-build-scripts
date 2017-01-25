@@ -12,5 +12,6 @@
 # Do not want to check in depot_tools or webrtc source code
 android/depot_tools/
 android/webrtc/
+android/libs/
 ios/depot_tools/
 ios/webrtc/
