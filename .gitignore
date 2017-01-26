@@ -13,5 +13,6 @@
 android/depot_tools/
 android/webrtc/
 android/libs/
+android/libs.zip
 ios/depot_tools/
 ios/webrtc/
