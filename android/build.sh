@@ -333,3 +333,12 @@ build_apprtc() {
     prepare_gyp_defines &&
     execute_build
 }
+
+build_apprtc_all() {
+    export OLD_WEBRTC_DEBUG = $WEBRTC_DEBUG
+    export WEBRTC_DEBUG = true
+    build_apprtc
+    export WEBRTC_DEBUG = false
+    build_apprtc
+    export WEBRTC_DEBUG = $OLD_WEBRTC_DEBUG
+}
