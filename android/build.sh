@@ -336,9 +336,9 @@ build_apprtc() {
 
 build_apprtc_all() {
     export OLD_WEBRTC_DEBUG = $WEBRTC_DEBUG
-    export WEBRTC_DEBUG = true
+    export WEBRTC_DEBUG=true
     build_apprtc
-    export WEBRTC_DEBUG = false
+    export WEBRTC_DEBUG=false
     build_apprtc
     export WEBRTC_DEBUG = $OLD_WEBRTC_DEBUG
 }
